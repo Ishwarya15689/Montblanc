@@ -1,0 +1,194 @@
+fetch_milestone_from_mb_outbound_db: "select * from gemstone.vw_milestone__v where study__v = '{}'"
+
+fetch_country_level_milestone_ext_id_from_gs: "select mv.external_id__v, mv.bayer_event_number__c from veeva_vobjects.milestone__v mv
+join veeva_vobjects.study__v sv on mv.study__v=sv.id
+where sv.name__v='{}' and mv.study_country__v is not null and mv.external_id__v is not null and mv.bayer_event_number__c is not null"
+
+fetch_study_metrics_from_outbound_db: "SELECT trial_alias__c AS study__ctms,planned_number_of_subjects__c,study_type__c,modified_date__v FROM gemstone.vw_study__v"
+
+fetch_study_country_metrics_from_outbound_db: "select * from gemstone.vw_metrics__ctms"
+
+fetch_studies_from_gemstone_outbound_db: "select s.external_id_2__c as {}, s.name__v as gs_study from veeva_vobjects.study__v s
+where s.study_source__c = '{{montblanc__c}}' and s.external_id_2__c is not null"
+
+get_country_code_abbriviations: "select name__v,abbreviation__c
+FROM veeva_vobjects.country__v where code__sys IS NOT NULL;"
+
+fetch_planning_state_studies_from_gemstone_outbound_db: "select s.name__v as gs_study, s.state__v from veeva_vobjects.study__v s
+where s.study_source__c = '{montblanc__c}' and s.state__v not in ('early_planning_state__c','candidate_state__v')"
+
+fetch_data_extract_log_query: "SELECT last_data_extract_datetime FROM montblanc.montblanc_data_extract_log 
+WHERE mb_to_gs_dataset = '{}'"
+
+fetch_config_from_db: "select interval_in_days from montblanc.mb_to_gs_config where mb_to_gs_dataset='{dataset_name}'"
+
+update_data_extract_log_query: "update montblanc.montblanc_data_extract_log set last_data_extract_datetime='{extract_date}' 
+  where mb_to_gs_dataset = '{dataset_name}'"
+
+load_to_staging_db:
+  fetch_data_from_staging_table: "SELECT {} FROM {}.{}"
+
+fetch_data_from_staging_db: "SELECT * FROM montblanc.{table_name} where delta_flag in ('Y');"
+
+update_flag_for_montblanc_table: "update montblanc.{table} SET delta_flag = 'N',last_modified_date=now(), vault_error_response=Null 
+  where delta_flag in ('Y');"
+
+update_flag_for_study_person_montblanc_table: "update montblanc.{table} SET delta_flag = 'N',last_modified_date=now(), vault_error_response=Null 
+  where delta_flag in ('Y') and team_role__v in ('Study Manager - Blinded','Data Reconciliation Specialist');"
+
+# Added found_study__v filter so that delta_flag does not get updated to N in case fond_study__v is null
+update_flag_for_study_country_person_montblanc_table: "update montblanc.{table} SET delta_flag = 'N',last_modified_date=now(), vault_error_response=Null 
+  where delta_flag in ('Y') and team_role__v in ('Country Lead Monitor - Blinded') and found_study__v = 'Y';"
+
+## Study Country Queries  
+
+fetch_study_country_data_from_montblanc_db: "SELECT study__v, country__v, state__v, object_type__v, study_country_cancellation_category__c, modified_date__v
+FROM gemstone.vw_study_country__v"
+
+fetch_person_data_from_montblanc_db: "SELECT study__v, country__v, person__clin, global_id__sys
+	FROM gemstone.vw_study_person__clin where country__v is not null"
+
+fetch_contact_from_outound_db: "select ps.external_id_2__c as person, cic.name__v as contact_info from veeva_vobjects.person__sys ps inner join veeva_vobjects.contact_information__clin cic
+on cic.person__clin = ps.id"
+
+fetch_mb_study_country_person_from_gs: "select sv.external_id_2__c as study__v,sc.name__v as country__v, p.external_id_2__c as responsible_person 
+from veeva_vobjects.study_country__v sc
+join veeva_vobjects.person__sys p on sc.responsible_person__c=p.id
+left join veeva_vobjects.study__v  sv on sc.study__v=sv.id
+where sv.study_source__c='{montblanc__c}' 
+and sc.responsible_person__c is not null and sc.external_id__v is not null"
+
+fetch_data_from_staging_table: "SELECT {} FROM {}.{};"
+
+fetch_study_from_gemstone_outbound: "select distinct st.external_id_2__c as study__v from veeva_vobjects.study__v st
+left join veeva_vobjects.template_milestone_master_set__v ms on st.milestone_master_set__v = ms.id
+where st.state__v not in ('candidate_state__v','early_planning_state__v')
+and ms.name__v='Simple Template Milestone Master Set';"
+
+fetch_study_from_study_country_staging: "select external_id__v,study__v FROM montblanc.study_country__v "
+fetch_study_from_study_person_staging: "select external_id_2__c,study__clin as study__v FROM montblanc.study_person__clin where team_role__v ='Country Lead Monitor - Blinded'"
+
+fetch_external_id_from_mb_staging: "select external_id__v,country_selected_date__v FROM montblanc.study_country__v where found_study__v = 'Y'"
+fetch_external_id_from_outbound: "select external_id__v,country_selected_date__v FROM veeva_vobjects.study_country__v"
+
+get_study_person_data_from_gemstone_ob: "select spc.external_id_2__c,sv.external_id_2__c as study__clin,tv.name__v as team_role__v, 
+sc.name__v as study_country__clin
+FROM veeva_vobjects.study_person__clin spc
+left join veeva_vobjects.study__v sv on sv.id=spc.study__clin
+left join veeva_vobjects.study_country__v sc on sc.id=spc.study_country__clin
+left join veeva_vobjects.team_role__v tv on tv.id=spc.team_role__v
+where spc.end_date__clin is null"
+
+# Added delta_flag filter to avoid duplication issue in case failed records are present in staging DB
+fetch_staging_persons_data: "select study__clin as study__v, study_country__clin as country__v, person__clin as staging_person FROM montblanc.study_person__clin where team_role__v ='Country Lead Monitor - Blinded' and end_date__clin is null and delta_flag!='FAILED'"
+
+# study country importer queries
+
+extract_date_columns_query: "SELECT column_name FROM information_schema.columns 
+  where table_name = '{table_name}' and table_schema = 'montblanc' and column_name like '%date%';"
+
+extract_records_query: "SELECT * FROM montblanc.{table_name} where found_study__v='Y' and delta_flag in ('Y');"
+extract_records_persons_query: "SELECT * FROM montblanc.{table_name} where team_role__v ='Country Lead Monitor - Blinded' and found_study__v='Y' and delta_flag in ('Y');"
+
+fetch_responsible_person_country: "SELECT study__clin, study_country__abbreviation, person__clin 
+FROM montblanc.study_person__clin
+WHERE  team_role__v like '%Country Lead Monitor - Blinded%' and found_study__v='Y' and end_date__clin is null and delta_flag in ('N');"
+
+fetch_person_from_outbound_db_country: "SELECT id as responsible_person__c, external_id_2__c FROM veeva_vobjects.person__sys;"
+
+fetch_cancelled_study_country_from_staging_db: "select study__v, external_id__v,cancelled_api_flag,last_modified_date,reason_for_stoppingcancelling__c 
+from montblanc.study_country__v sc where state__v = 'cancelled_state__v'"
+
+fetch_studies_from_staging_db_for_study_country: "select st.external_id_2__c as study__v, st.state__v as study_state from montblanc.study__v st"
+
+fetch_all_study_countries_from_gemstone_outbound_db: "select sc.id,sc.external_id__v,sc.state__v from veeva_vobjects.study_country__v sc
+join veeva_vobjects.study__v st on st.id=study__v
+where sc.state__v != 'cancelled_state__v' and st.study_source__c = '{montblanc__c}'"
+
+fetch_not_closed_study_country_from_staging_db: "select sc.external_id__v from montblanc.study_country__v sc
+where sc.closed_api_flag is null"
+
+fetch_closed_study_country_from_gemstone_outbound_db: "select sc.external_id__v,sc.id 
+from veeva_vobjects.study_country__v sc
+join veeva_vobjects.study__v st
+on st.id=study__v
+where sc.state__v = 'closing_state__v' and st.study_source__c = '{montblanc__c}'
+and sc.id in (
+select study_country__v from veeva_vobjects.milestone__v ms
+where ms.milestone_type__v = '{closed__c}' and ms.state__v = 'complete_state__v')"
+
+update_data_extract_log: "update montblanc.veeva_importer_log set last_extract_timestamp='{last_extract_timestamp}' where dataset_name='{dataset_name}'"
+
+fetch_study_country_from_outbound_db: "SELECT * from veeva_vobjects.study_country__v"
+
+fetch_all_data_from_staging_db: "SELECT * FROM montblanc.{table_name}"
+
+fetch_last_extraction_timestamp: "select * from montblanc.veeva_importer_log where dataset_name ='{dataset_name}'"
+
+fetch_reject_records_country: "SELECT id, name__sys, inactive_workflow__sysr.name__sys, inactive_workflow__sysr.modified_date__sys, (SELECT object_record_id__sys, verdict__sys, verdict_reason__sys FROM inactive_workflow_task_items__sysr) FROM inactive_workflow_task__sys where inactive_workflow__sysr.name__sys='{workflow}' and inactive_workflow__sysr.modified_date__sys>'{last_extract_time}'"
+
+interfaces:
+  study_country__v:
+    pk: "external_id__v"
+  study_person__clin:
+    pk: "external_id_2__c"
+
+## Study Extraction queries
+fetch_date_columns_query: "SELECT column_name FROM information_schema.columns 
+where table_name = '{table_name}' and data_type like '%date%'"
+
+fetch_study_data_from_montblanc_db: "select * from gemstone.vw_study__v"
+
+fetch_study_person_data_from_montblanc_db: "select distinct study__v, person__clin, global_id__sys from gemstone.vw_study_person__clin"
+
+fetch_recon_specialist_from_montblanc_db: "select * from gemstone.vw_reconciliation_specialist"
+
+fetch_study_person_contact_from_outound_db: "select ps.external_id_2__c as person, cic.name__v as contact_info from veeva_vobjects.person__sys ps inner join veeva_vobjects.contact_information__clin cic
+on cic.person__clin = ps.id"
+
+# Added delta_flag filter to avoid duplication issue in case failed records are present in staging DB
+fetch_study_responsible_person_from_staging: "select study__clin as study__v, person__clin as responsible_person FROM montblanc.study_person__clin 
+where team_role__v ='Study Manager - Blinded' and end_date__clin is null and delta_flag!='FAILED'"
+
+fetch_dummy_org_ext_id_from_gemstone: "select external_id_2__c from veeva_vobjects.organization__v where name__v = 'Investigator / Institute'"
+
+fetch_study_products_from_montblanc_db: "SELECT study__v, product__v FROM gemstone.vw_study_product__v"
+
+## Study Importer queries
+fetch_data_from_study_person: "SELECT * FROM montblanc.study_person__clin where delta_flag in ('Y') and team_role__v like '%Study Manager%' or team_role__v like '%Data Reconciliation Specialist%'"
+
+fetch_responsible_person: "SELECT study__clin as external_id_2__c, person__clin as external_id_2__c_x FROM montblanc.study_person__clin x
+WHERE  team_role__v like '%Study Manager%' and delta_flag in ('N') and end_date__clin is null"
+
+fetch_person_from_outbound_db: "SELECT id as responsible_person__c, external_id_2__c as external_id_2__c_y FROM veeva_vobjects.person__sys"
+
+fetch_successfully_loaded_data_from_staging_db: "SELECT * FROM montblanc.{table_name} where delta_flag in ('N');"
+
+fetch_study_from_outbound_db: "SELECT * from veeva_vobjects.study__v"
+
+fetch_organization_from_outbound_db: "SELECT id, external_id_2__c from veeva_vobjects.organization__v WHERE external_id_2__c is not null"
+
+fetch_not_closed_studies_from_staging_db: "select st.external_id_2__c as study_id from montblanc.study__v st
+where st.closed_api_flag is null and st.study_ready_to_be_closed_in_gemstone__c = true"
+
+fetch_closing_studies_from_gemstone_outbound_db: "select st.id, st.external_id_2__c as study_id
+from veeva_vobjects.study__v st where st.study_source__c = '{montblanc__c}' and st.state__v = 'closing_state__v'"
+
+fetch_cancelled_studies_from_staging_db: "select st.external_id_2__c as study_id, st.cancellation_date__c, st.reason_for_stoppingcancelling_study__c, st.cancelled_api_flag, st.last_modified_date from montblanc.study__v st
+where st.state__v = 'cancelled_state__v'"
+
+fetch_all_studies_from_gemstone_outbound_db: "select st.id, st.external_id_2__c as study_id, st.state__v from veeva_vobjects.study__v st
+where st.state__v != 'cancelled_state__v' and st.study_source__c = '{montblanc__c}'"
+
+fetch_reject_records: "SELECT id, name__sys, inactive_workflow__sysr.name__sys, inactive_workflow__sysr.modified_date__sys, (SELECT object_record_id__sys, verdict__sys, verdict_reason__sys FROM inactive_workflow_task_items__sysr) FROM inactive_workflow_task__sys where inactive_workflow__sysr.name__sys='{workflow}' and inactive_workflow__sysr.modified_date__sys>'{last_extract_time}'"
+
+fetch_mb_studies_from_gemstone_outbound_db: "select st.external_id_2__c from veeva_vobjects.study__v st 
+where st.study_source__c = '{montblanc__c}'"
+
+interfaces_study:
+  study__v:
+    pk: "external_id_2__c"
+  study_person__clin:
+    pk: "external_id_2__c"
+  study_product__v:
+    pk: "pk_id_study_product"
