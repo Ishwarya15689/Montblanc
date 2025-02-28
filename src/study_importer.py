@@ -483,11 +483,18 @@ class StudyVeevaImporter:
             for rejected_study in rejected_studies[
                 "inactive_workflow_task_items__sysr"
             ]["data"]:
-                rejected_studies_list.append(
-                    RejectedStudy(
-                        modified_date__sys=modified_date__sys, **rejected_study
-                    )
-                )
+                try:
+            
+                    if rejected_study.get("verdict__sys") is None:
+                     raise ValueError(f"Missing 'verdict__sys' for record {rejected_study.get('object_record_id__sys')}")
+
+           
+                    rejected_studies_list.append(rejected_study)
+        
+                except Exception as error:
+            
+                     LOGGER.exception(f"Error occurred while processing record {rejected_study.get('object_record_id__sys')}. Error: {error}")
+                     raise
         if len(rejected_studies_list) == 0:
             LOGGER.info(f"No reject records found for {column}")
             return pd.DataFrame()
